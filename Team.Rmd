@@ -1,0 +1,159 @@
+---
+title: "Ds202_Lab4:Tidying and Joining"
+author: "SIjie Huang, Hanying Shen"
+date: "October 24, 2019"
+output: html_document
+---
+
+## Background
+An excerpt of the individual player data of the Cyclone football team is available from Canvas. Dowload the [excel file](cyclonesFootball2018.xlsx) and put the file next to your Rmd files. 
+
+Some abbreviations for the column names can be found in the Glossaries sheet in the Excel file.
+
+**References:**
+
+- [Iowa State University Athelete](https://cyclones.com/index.aspx)
+- [A Beginner's Guide to American Football](https://www.youtube.com/watch?v=3t6hM5tRlfA) for the rules of American football.
+
+
+## Loading Data: Cyclone Football 
+```{R}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(readr)
+library(readxl)
+library(tidyverse)
+defense <-read_excel('cyclonesFootball2018.xlsx', sheet='Defensive')
+offense <-read_excel('cyclonesFootball2018.xlsx', sheet='Offensive')
+bio <- read_excel('cyclonesFootball2018.xlsx', sheet='Biography')
+```
+
+
+## Part one: Cleaning data
+
+1.The player names and opponent names are factors.
+```{R}
+#1
+head(defense)
+defense$Name<-as.factor(defense$Name)
+defense$Opponent_Opponent<-as.factor(defense$Opponent_Opponent)
+offense$Name<-as.factor(offense$Name)
+offense$Opponent_Opponent<-as.factor(offense$Opponent_Opponent)
+bio$Name<-as.factor(bio$Name)
+```
+
+
+2.All offensive and defensive statistics are numerical. The Weight column in Biography is also numeric. (Hint: look at ?mutate_at if you want to save writing some code).
+```{R}
+#2
+def1<-defense%>%mutate_at(vars(Tackles_Solo
+,Tackles_ASST,Tackles_TFL,Tackles_Sack,Turnover_FF,Turnover_FR
+,Turnover_INT,Pass_QBH,Pass_PB
+),funs(as.numeric))
+off1<-offense%>%mutate_at(vars(Receiving_REC, Receiving_YDS, Receiving_TD, Rushing_ATT, Rushing_YDS, Rushing_TD,`Passing_CMP-ATT`, Passing_YDS, Passing_TD, Passing_INT), funs(as.numeric))
+bio1<-bio%>%mutate_at(vars(Weight),funs(as.numeric))
+```
+
+
+3.Separate the Height column into two columns. Make sure the newly created columns are numeric. Then create one column that represents Height (Hint: Use a unit that works well). Drop any irrelavant columns from this process.
+```{R}
+#3
+bio1<-bio%>%separate(Height,c("feet","inch"))
+bio1
+bio1$inch[is.na(bio1$inch)]<-0
+bio1$feet<-as.numeric(bio1$feet)
+bio1$inch<-as.numeric(bio1$inch)
+bio1$feet<-bio1$feet*12
+bio1$Height<-bio1$feet+bio1$inch
+bio1<-select(bio1,-c(feet,inch))
+head(bio1)
+```
+
+
+4.By cleaning the three data frames in R, at the end of this step you should have the following three clean data frames: defClean, offClean, and bioClean. Print the structures of these data frames. Make sure your data types make sense for each variable.
+```{R}
+#4
+defClean<-def1
+offClean<-off1
+bioClean<-bio1
+bioClean
+str(defClean)
+str(offClean)
+str(bioClean)
+```
+
+## Part two: Tidying (A)
+For the following questions, work on the cleaned data frames `defClean`, `offClean`, and `bioClean`.
+
+1. Reformat the `defClean` data frame into a tidy format using `gather`. The type of statistic (Tackles_Solo, Tackles_ASST, etc) is added as a **new key column named `Statistic`.** 
+```{R}
+defClean<-defClean %>% gather(Statistics,key,`Tackles_Solo`:`Pass_PB`)
+```
+
+
+2. Create a histogram for each defensive statistic (make sure to explore different binwidths). Use `facet_wrap` to draw all histograms in a single plot. What defensive skills are rare?
+```{R}
+ggplot(data=defClean, aes(key)) + geom_histogram(bins = 30) + facet_wrap(~ Statistics, ncol=2)+labs(title="Score for each defensive statistics",x="score",y="Count")
+```
+
+From the histogram, we can see there are only a very small amount of people use Turnover_FF, Turnover_FR and Turnover_INT.So These three defensive skills are rare.
+
+3. Did ISU have better defense against West Virginia or Kansas State? Answer this question by creating a scatterplot with x-axis being the number of solo tackles (by each player) against West Virginia, and y-axis being that against Kansas State. A large number of solo tackles indicates good defense. 
+
+      (**Hint**: From step 1 we have gathered our `defClean` into 4 columns. \
+       Now we only want to focus on solo tackles (hint...`filter`). 
+      Look at your data structure. What form do we need our data to have in order to easily answer this question? (hint...`spread`)).
+      
+```{R}
+A<-defClean %>% spread(Opponent_Opponent,key) %>% filter(Statistics == "Tackles_Solo") %>% select("Name", "Statistics", "West Virginia","Kansas State")
+ggplot(data=A)+geom_point(aes(x=`West Virginia`,y=`Kansas State`))+geom_smooth(aes(x=`West Virginia`,y=`Kansas State`),method='lm')+labs(title="Solo tackles between West Virginia and Kansas State",x="West Virginia",y="Kansas State")
+```
+
+
+From the plot, we can see there is a moderate positive relationship between west virgina and Kansas State,which means Kansas State has larger solo tackles,so ISU have better defense against Kansas State.
+
+## Part two: Tidying  (B)
+Now let's turn our attention to the player biography `bioClean`.
+
+1. Separate the `Hometown` column into two columns, namely the city and the state. Print the first few rows of these two columns. (Hint: look at the `sep=` argument of `separate`)
+```{R}
+bio2<-bioClean%>%separate(Hometown,c("city","state"),sep=",")
+bio2%>% has_name("inch")
+bio2
+```
+
+
+2. How many players are there from each state?
+```{R}
+table(bio2$state)
+```
+
+## Part three: Joining data frames
+
+1. Find out where the offensive players are from by joining the offensive data and player biography data appropriately.
+```{R}
+df<-inner_join(bio2,offClean,by="Name")
+df
+table(df$state)
+```
+
+
+2. Is there a relationship between the weight of a player and the receiving yards (`Receiving_YDS`)?
+
+```{R}
+ggplot(data=df,aes(x=Weight,y=Receiving_YDS))+geom_point()+labs(title="The relationship between Weight and the receiving yards", x="Weight of the player",y="the receiving yards of offensive players")
+```
+
+
+From the plot, we can see there are no relationship between Weight and Receiving YDS.
+
+
+3. Explore more. Raise a question that can be answered only by looking at two or more data frames. Then answer that question.
+
+```{R}
+#Is there a relationship between Height of a player and the receiving yards of offensive players?
+ggplot(data=df,aes(x=Height,y=Receiving_YDS))+geom_point()+geom_smooth(method='lm')+labs(title="The relationship between Height and the receiving yards", x="Height of the player",y="the receiving yards of offensive players")
+```
+
+From the plot, we can see there are weak positive relationship between Height and Receiving YDS of offensive players.
